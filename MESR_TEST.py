@@ -1,11 +1,12 @@
-import torch
 import torch.nn as nn
 from conv_layer import conv_layer
 from RFLB import RLFB
+from SUBP import SubPixelConvBlock  
 from torchsummary import summary
+import torch
 
 class MESR(nn.Module):
-    def __init__(self, in_channels, mid_channels, out_channels, num_blocks=12, esa_channels=16):
+    def __init__(self, in_channels, mid_channels, out_channels, num_blocks=12, esa_channels=16, upscale_factor=2):
         super(MESR, self).__init__()
 
         self.conv_in = conv_layer(in_channels, mid_channels, 3)
@@ -15,19 +16,24 @@ class MESR(nn.Module):
 
         self.conv_out = conv_layer(mid_channels, out_channels, 3)
 
+        # Sub-pixel convolution block
+        self.sub_pixel_conv = SubPixelConvBlock(out_channels, out_channels, upscale_factor=upscale_factor)
+
     def forward(self, x):
- 
-        out_conv_in = self.conv_in(x)
-
+        out_conv_in = self.conv_in(x)  # First convolution layer
+        out_rlfb = self.rlfb_blocks(out_conv_in)  # RLFB blocks
         
-        out_rlfb = self.rlfb_blocks(out_conv_in)
-
         # Skip connection
         out_skip = out_rlfb + out_conv_in
 
-        out = self.conv_out(out_skip)
+        out = self.conv_out(out_skip) 
+
+        out = self.sub_pixel_conv(out) # assumption : upscaling actor is 2
 
         return out
+    
+
+
 
 # Function to print summary
 def print_model_summary(device):
