@@ -1,6 +1,6 @@
 import torch.nn as nn
 from conv_layer import conv_layer
-from RFLB import RLFB
+from RLFB import RLFB
 from SUBP import SubPixelConvBlock  
 from torchsummary import summary
 import torch
@@ -12,7 +12,7 @@ class MESR(nn.Module):
         self.conv_in = conv_layer(in_channels, mid_channels, 3)
 
         # 12 RLFB blocks
-        self.rlfb_blocks = nn.Sequential(*[RLFB(mid_channels, esa_channels=esa_channels) for _ in range(num_blocks)])
+        self.RLFB_blocks = nn.Sequential(*[RLFB(mid_channels, esa_channels=esa_channels) for _ in range(num_blocks)])
 
         self.conv_out = conv_layer(mid_channels, out_channels, 3)
 
@@ -21,10 +21,10 @@ class MESR(nn.Module):
 
     def forward(self, x):
         out_conv_in = self.conv_in(x)  # First convolution layer
-        out_rlfb = self.rlfb_blocks(out_conv_in)  # RLFB blocks
+        out_RLFB = self.RLFB_blocks(out_conv_in)  # RLFB blocks
         
         # Skip connection
-        out_skip = out_rlfb + out_conv_in
+        out_skip = out_RLFB + out_conv_in
 
         out = self.conv_out(out_skip) 
 
@@ -32,8 +32,6 @@ class MESR(nn.Module):
 
         return out
     
-
-
 
 # Function to print summary
 def print_model_summary(device):

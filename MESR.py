@@ -1,6 +1,6 @@
 import torch.nn as nn
 from conv_layer import conv_layer
-from RFLB import RLFB
+from RLFB import RLFB
 
 class MESR(nn.Module):
     def __init__(self, in_channels, mid_channels, out_channels, num_blocks=12, esa_channels=16):

@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from RFLB import RFLB
+from RLFB import RLFB
 
 class SubPixelConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, upscale_factor=2):
@@ -29,7 +29,7 @@ class ImageEnhancementModel(nn.Module):
         self.initial_conv = nn.Conv2d(in_channels, 64, kernel_size=3, stride=1, padding=1)
         
         # RLFB blocks (assuming Residual Learning Feature Blocks or similar)
-        self.rl_blocks = nn.Sequential(*[RFLB(64) for _ in range(num_rlfb_blocks)]) # Assuming RLFB is a pre-defined block
+        self.rl_blocks = nn.Sequential(*[RLFB(64) for _ in range(num_rlfb_blocks)]) # Assuming RLFB is a pre-defined block
         
         # Final convolution layer before sub-pixel block
         self.final_conv = nn.Conv2d(64, 64, kernel_size=3, stride=1, padding=1)
