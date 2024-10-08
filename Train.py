@@ -1,11 +1,12 @@
 import os
-import torch
 import torch.nn as nn
+import torch
 from torchsummary import summary
 import torch.optim as optim
 from PIL import Image
 import torchvision.transforms as transforms
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, random_split
+import random
 
 # from our codebase
 from conv_layer import conv_layer
@@ -61,14 +62,14 @@ class SuperResolutionDataset(Dataset):
         return {'image': lr_image, 'label': hr_image}
 
 
-def dataloaders(train_dataset, val_dataset, batch_size=32):
+def dataloaders(train_dataset, val_dataset, batch_size=2):
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     return train_loader, val_loader
 
 
-def setup_training(model, device, train_loader, val_loader, epochs=20, patience=5):
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+def setup_training(model, device, train_loader, val_loader, epochs=200, patience=5):
+    optimizer = optim.Adam(model.parameters(), lr=1e-5)
     loss_function = CharbonnierLoss(epsilon=1e-6)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
@@ -81,39 +82,52 @@ def setup_training(model, device, train_loader, val_loader, epochs=20, patience=
         device=device,
         epochs=epochs,
         patience=patience,
-        val_interval=1,  # for now this is dummy
+        val_interval=1,
         lr_scheduler=lr_scheduler,
         output_dir="./model_output"  # Specify the output directory
     )
 
 
 def main():
+    # Check if CUDA is available
+    if torch.cuda.is_available():
+        print("CUDA is available!")
+        print(f"Number of available GPUs: {torch.cuda.device_count()}")
+        print(f"Current device: {torch.cuda.current_device()}")
+        print(f"Device name: {torch.cuda.get_device_name(torch.cuda.current_device())}")
+    else:
+        print("CUDA is not available.")
+
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    
-    # Model setup
+
     model = MESR(in_channels=3, mid_channels=64, out_channels=3, num_blocks=12)
 
-    # Define transformations
     transform = transforms.Compose([
         transforms.Resize((256, 256)),  # Resize to desired dimensions
-        transforms.ToTensor(),            # Convert to tensor
+        transforms.RandomHorizontalFlip(p=0.5),  
+        transforms.RandomVerticalFlip(p=0.5),    
+        transforms.RandomRotation(90),           
+        transforms.ToTensor(),             
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # Normalize
-    ])
+    ]   )
 
-    # Define directories
-    train_lr_dir = "dataset/train/LR"
-    train_hr_dir = "dataset/train/HR"
-    val_lr_dir = "dataset/val/LR"
-    val_hr_dir = "dataset/val/HR"
 
-    # Create dataset instances
-    train_dataset = SuperResolutionDataset(lr_dir=train_lr_dir, hr_dir=train_hr_dir, transform=transform)
-    val_dataset = SuperResolutionDataset(lr_dir=val_lr_dir, hr_dir=val_hr_dir, transform=transform)
+    # load the dataset
+    lr_dir = "/home/user/Desktop/Abul Hasan/Dataset/LRHR dataset/renamedsoho"
+    hr_dir = "/home/user/Desktop/Abul Hasan/Dataset/LRHR dataset/renamedsdo"
 
-    train_loader, val_loader = dataloaders(train_dataset, val_dataset, batch_size=32)
+    # dataset instance
+    full_dataset = SuperResolutionDataset(lr_dir=lr_dir, hr_dir=hr_dir, transform=transform)
+
+    #splitting the dataset
+    train_size = int(0.8 * len(full_dataset))
+    val_size = len(full_dataset) - train_size
+    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+
+    # Use dataloaders function to get train and validation loaders
+    train_loader, val_loader = dataloaders(train_dataset, val_dataset, batch_size=2)
+
     model_summary(model, device)
     setup_training(model, device, train_loader, val_loader)
 
-
-if __name__ == "__main__":
-    main()
+main()

@@ -54,6 +54,7 @@ def train_model(
     best_metric_epoch = -1
     not_improved_epoch = 0
     epoch_loss_values = []
+    val_loss_values = []
     metric_values = []
     total_start = time.time()
 
@@ -63,12 +64,11 @@ def train_model(
         print(f"epoch {epoch + 1}/{epochs}")
         model.train()
         epoch_loss = 0
-        step = 0
 
         # Training Loop
         for step, batch_data in enumerate(train_loader):
             step_start = time.time()
-            lr_inputs, hr_targets = batch_data["low_res"].to(device), batch_data["high_res"].to(device)
+            lr_inputs, hr_targets = batch_data["image"].to(device), batch_data["label"].to(device)
 
             optimizer.zero_grad()
             outputs = model(lr_inputs)
@@ -92,15 +92,22 @@ def train_model(
         # Validation at intervals
         if (epoch + 1) % val_interval == 0:
             model.eval()
+            val_loss = 0
             metric = 0
             with torch.no_grad():
                 for val_data in val_loader:
-                    val_lr_inputs, val_hr_targets = val_data["low_res"].to(device), val_data["high_res"].to(device)
+                    val_lr_inputs, val_hr_targets = val_data["image"].to(device), val_data["label"].to(device)
                     val_outputs = model(val_lr_inputs)
+                    val_loss += loss_function(val_outputs, val_hr_targets).item()
                     metric += compute_metric(val_outputs, val_hr_targets)
 
+                val_loss /= len(val_loader)
+                val_loss_values.append(val_loss)
                 metric /= len(val_loader)
                 metric_values.append(metric)
+
+                print(f"Validation Loss: {val_loss:.4f}")
+                print(f"Validation PSNR: {metric:.4f}")
 
                 # Save best model
                 if metric > best_metric:
