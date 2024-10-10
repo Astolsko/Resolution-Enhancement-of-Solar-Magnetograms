@@ -1,11 +1,8 @@
-# Preferred Optimizer : Adam
-# Preferred Loss : Charbonnier loss
-# Number of epochs : ___ 
-
 import torch
 import torch.nn as nn
 import time
 import os
+import matplotlib.pyplot as plt  
 
 class CharbonnierLoss(nn.Module):
     def __init__(self, epsilon=1e-6):
@@ -35,6 +32,20 @@ def compute_metric(y_pred, y_true):
     psnr = 20 * torch.log10(1.0 / torch.sqrt(mse))
     return psnr.item()
 
+
+def plot_loss_curves(train_loss_values, val_loss_values):
+    """Function to plot the training and validation loss curves."""
+    epochs = range(1, len(train_loss_values) + 1)
+
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs, train_loss_values, label="Training Loss")
+    plt.plot(epochs, val_loss_values, label="Validation Loss")
+    plt.xlabel("Epochs")
+    plt.ylabel("Loss")
+    plt.title("Training and Validation Loss vs. Epochs")
+    plt.legend()
+    plt.grid(True)
+    plt.show()
 
 def train_model(
     model, 
@@ -69,14 +80,11 @@ def train_model(
         for step, batch_data in enumerate(train_loader):
             step_start = time.time()
             lr_inputs, hr_targets = batch_data["image"].to(device), batch_data["label"].to(device)
-
             optimizer.zero_grad()
             outputs = model(lr_inputs)
             loss = loss_function(outputs, hr_targets)
-
             loss.backward()
             optimizer.step()
-
             epoch_loss += loss.item()
             print(
                 f"Step {step + 1}/{len(train_loader)}"
@@ -89,7 +97,7 @@ def train_model(
         epoch_loss_values.append(epoch_loss)
         print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
-        # Validation at intervals
+        # Validation
         if (epoch + 1) % val_interval == 0:
             model.eval()
             val_loss = 0
@@ -105,7 +113,6 @@ def train_model(
                 val_loss_values.append(val_loss)
                 metric /= len(val_loader)
                 metric_values.append(metric)
-
                 print(f"Validation Loss: {val_loss:.4f}")
                 print(f"Validation PSNR: {metric:.4f}")
 
@@ -122,17 +129,15 @@ def train_model(
                         training = False
                         print("Early stopping as model performance hasn't improved")
                         break
-
             print(
-                f"Epoch {epoch + 1} validation metric: {metric:.4f},"
+                f"Epoch {epoch + 1} validation metric: {metric:.4f}," 
                 f" best metric so far: {best_metric:.4f} at epoch {best_metric_epoch}"
             )
-
         print(f"Time taken for epoch {epoch + 1}: {(time.time() - epoch_start):.4f} seconds")
-
         if not training:
             print("Training stopped early due to no improvement.")
             break
-
     total_time = time.time() - total_start
     print(f"Total training time: {total_time:.4f} seconds")
+    # Plot loss curves
+    plot_loss_curves(epoch_loss_values, val_loss_values)
