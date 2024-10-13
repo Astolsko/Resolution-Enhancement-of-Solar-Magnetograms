@@ -1,0 +1,276 @@
+training loop below : 
+
+# Preferred Optimizer : Adam
+# Preferred Loss : Charbonnier loss
+# Number of epochs : ___ 
+
+import torch
+import torch.nn as nn
+import time
+import os
+
+class CharbonnierLoss(nn.Module):
+    def __init__(self, epsilon=1e-6):
+        super(CharbonnierLoss, self).__init__()
+        self.epsilon = epsilon
+
+    def forward(self, y_pred, y_true):
+        return torch.mean(torch.sqrt((y_pred - y_true) ** 2 + self.epsilon ** 2))
+
+
+def compute_metric(y_pred, y_true):
+    """
+    Computes PSNR (Peak Signal-to-Noise Ratio) between predicted and ground truth images.
+    
+    Parameters:
+        y_pred (torch.Tensor): Predicted images.
+        y_true (torch.Tensor): Ground truth images.
+        
+    Returns:
+        float: PSNR value.
+    """
+    mse = torch.mean((y_pred - y_true) ** 2)
+    if mse == 0:  # Avoid division by zero
+        return float('inf')
+    
+    # Use the maximum pixel value for normalization (assuming images are in [0, 1])
+    psnr = 20 * torch.log10(1.0 / torch.sqrt(mse))
+    return psnr.item()
+
+
+def train_model(
+    model, 
+    train_loader, 
+    val_loader, 
+    optimizer, 
+    loss_function, 
+    device, 
+    epochs, 
+    patience, 
+    val_interval, 
+    lr_scheduler, 
+    output_dir
+):
+    training = True
+    best_metric = -1
+    best_metric_epoch = -1
+    not_improved_epoch = 0
+    epoch_loss_values = []
+    metric_values = []
+    total_start = time.time()
+
+    for epoch in range(epochs):
+        epoch_start = time.time()
+        print("-" * 10)
+        print(f"epoch {epoch + 1}/{epochs}")
+        model.train()
+        epoch_loss = 0
+        step = 0
+
+        # Training Loop
+        for step, batch_data in enumerate(train_loader):
+            step_start = time.time()
+            lr_inputs, hr_targets = batch_data["low_res"].to(device), batch_data["high_res"].to(device)
+
+            optimizer.zero_grad()
+            outputs = model(lr_inputs)
+            loss = loss_function(outputs, hr_targets)
+
+            loss.backward()
+            optimizer.step()
+
+            epoch_loss += loss.item()
+            print(
+                f"Step {step + 1}/{len(train_loader)}"
+                f", train_loss: {loss.item():.4f}"
+                f", step time: {(time.time() - step_start):.4f} sec"
+            )
+
+        lr_scheduler.step()
+        epoch_loss /= len(train_loader)
+        epoch_loss_values.append(epoch_loss)
+        print(f"epoch {epoch + 1} average loss: {epoch_loss:.4f}")
+
+        # Validation at intervals
+        if (epoch + 1) % val_interval == 0:
+            model.eval()
+            metric = 0
+            with torch.no_grad():
+                for val_data in val_loader:
+                    val_lr_inputs, val_hr_targets = val_data["low_res"].to(device), val_data["high_res"].to(device)
+                    val_outputs = model(val_lr_inputs)
+                    metric += compute_metric(val_outputs, val_hr_targets)
+
+                metric /= len(val_loader)
+                metric_values.append(metric)
+
+                # Save best model
+                if metric > best_metric:
+                    best_metric = metric
+                    best_metric_epoch = epoch + 1
+                    not_improved_epoch = 0
+                    torch.save(model.state_dict(), os.path.join(output_dir, "best_model.pth"))
+                    print(f"Saved new best model at epoch {epoch + 1}")
+                else:
+                    not_improved_epoch += 1
+                    if not_improved_epoch >= patience:
+                        training = False
+                        print("Early stopping as model performance hasn't improved")
+                        break
+
+            print(
+                f"Epoch {epoch + 1} validation metric: {metric:.4f},"
+                f" best metric so far: {best_metric:.4f} at epoch {best_metric_epoch}"
+            )
+
+        print(f"Time taken for epoch {epoch + 1}: {(time.time() - epoch_start):.4f} seconds")
+
+        if not training:
+            print("Training stopped early due to no improvement.")
+            break
+
+    total_time = time.time() - total_start
+    print(f"Total training time: {total_time:.4f} seconds")
+
+
+code in train.py file : 
+import os
+
+import torch.nn as nn
+import torch
+from torchsummary import summary
+import torch.optim as optim
+from PIL import Image
+import torchvision.transforms as transforms
+from torch.utils.data import Dataset, random_split
+import random
+
+# from our codebase
+from conv_layer import conv_layer
+from RLFB import RLFB
+from SUBP import SubPixelConvBlock  
+from Trainning_Loop import train_model, CharbonnierLoss
+
+
+class MESR(nn.Module):
+    def __init__(self, in_channels, mid_channels, out_channels, num_blocks=12, esa_channels=16, upscale_factor=2):
+        super(MESR, self).__init__()
+
+        self.conv_in = conv_layer(in_channels, mid_channels, 3)
+        self.RLFB_blocks = nn.Sequential(*[RLFB(mid_channels, esa_channels=esa_channels) for _ in range(num_blocks)])
+        self.conv_out = conv_layer(mid_channels, out_channels, 3)
+        self.sub_pixel_conv = SubPixelConvBlock(out_channels, out_channels, upscale_factor=upscale_factor)
+
+    def forward(self, x):
+        out_conv_in = self.conv_in(x)  
+        out_RLFB = self.RLFB_blocks(out_conv_in)  
+        out_skip = out_RLFB + out_conv_in  
+        out = self.conv_out(out_skip)  
+        out = self.sub_pixel_conv(out)  
+        return out
+
+
+def model_summary(model, device):
+    model.to(device)
+    summary(model, input_size=(3, 256, 256)) # Change order & num of channels to match grayscale channel 
+
+
+class SuperResolutionDataset(Dataset):
+    def __init__(self, lr_dir, hr_dir, transform=None):
+        self.lr_dir = lr_dir
+        self.hr_dir = hr_dir
+        self.lr_images = os.listdir(lr_dir)
+        self.transform = transform
+
+    def __len__(self):
+        return len(self.lr_images)
+
+    def __getitem__(self, idx):
+        lr_image_path = os.path.join(self.lr_dir, self.lr_images[idx])
+        hr_image_path = os.path.join(self.hr_dir, self.lr_images[idx])  # Assuming same naming
+
+        lr_image = Image.open(lr_image_path).convert("RGB")
+        hr_image = Image.open(hr_image_path).convert("RGB")
+
+        if self.transform:
+            lr_image = self.transform(lr_image)
+            hr_image = self.transform(hr_image)
+
+        return {'image': lr_image, 'label': hr_image}
+
+
+def dataloaders(train_dataset, val_dataset, batch_size=32):
+    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    return train_loader, val_loader
+
+
+def setup_training(model, device, train_loader, val_loader, epochs=20, patience=5):
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    loss_function = CharbonnierLoss(epsilon=1e-6)
+    lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
+
+    train_model(
+        model=model,
+        train_loader=train_loader,
+        val_loader=val_loader,
+        optimizer=optimizer,
+        loss_function=loss_function,
+        device=device,
+        epochs=epochs,
+        patience=patience,
+        val_interval=1,
+        lr_scheduler=lr_scheduler,
+        output_dir="./model_output"  # Specify the output directory
+    )
+
+
+def main():
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = MESR(in_channels=3, mid_channels=64, out_channels=3, num_blocks=12)
+
+    transform = transforms.Compose([
+        transforms.Resize((256, 256)),  # Resize to desired dimensions
+        transforms.RandomHorizontalFlip(p=0.5),  
+        transforms.RandomVerticalFlip(p=0.5),    
+        transforms.RandomRotation(90),           
+        transforms.ToTensor(),             
+        transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # Normalize
+    ]   )
+
+
+    # load the dataset
+    lr_dir = "/home/user/Desktop/Abul Hasan/Dataset/LRHR dataset/renamedsoho"
+    hr_dir = "/home/user/Desktop/Abul Hasan/Dataset/LRHR dataset/renamedsdo"
+
+    # dataset instance
+    full_dataset = SuperResolutionDataset(lr_dir=lr_dir, hr_dir=hr_dir, transform=transform)
+
+    # #splitting the dataset
+    train_size = int(0.8 * len(full_dataset))
+    val_size = len(full_dataset) - train_size
+    train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
+
+    # Use dataloaders function to get train and validation loaders
+    train_loader, val_loader = dataloaders(train_dataset, val_dataset, batch_size=32)
+
+    model_summary(model, device)
+    setup_training(model, device, train_loader, val_loader)
+
+main()
+
+
+
+
+error: 
+Traceback (most recent call last):
+  File "/home/user/Desktop/Abul Hasan/Resolution-Enhancement-of-Solar-Magnetograms-main/Train.py", line 125, in <module>
+    main()
+  File "/home/user/Desktop/Abul Hasan/Resolution-Enhancement-of-Solar-Magnetograms-main/Train.py", line 123, in main
+    setup_training(model, device, train_loader, val_loader)
+  File "/home/user/Desktop/Abul Hasan/Resolution-Enhancement-of-Solar-Magnetograms-main/Train.py", line 77, in setup_training
+    train_model(
+  File "/home/user/Desktop/Abul Hasan/Resolution-Enhancement-of-Solar-Magnetograms-main/Trainning_Loop.py", line 71, in train_model
+    lr_inputs, hr_targets = batch_data["low_res"].to(device), batch_data["high_res"].to(device)
+KeyError: 'low_res'

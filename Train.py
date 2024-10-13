@@ -1,4 +1,5 @@
 import os
+
 import torch.nn as nn
 import torch
 from torchsummary import summary
@@ -68,8 +69,8 @@ def dataloaders(train_dataset, val_dataset, batch_size=2):
     return train_loader, val_loader
 
 
-def setup_training(model, device, train_loader, val_loader, epochs=200, patience=5):
-    optimizer = optim.Adam(model.parameters(), lr=1e-5)
+def setup_training(model, device, train_loader, val_loader, epochs=20, patience=5):
+    optimizer = optim.Adam(model.parameters(), lr=1e-3)
     loss_function = CharbonnierLoss(epsilon=1e-6)
     lr_scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.1)
 
@@ -89,6 +90,7 @@ def setup_training(model, device, train_loader, val_loader, epochs=200, patience
 
 
 def main():
+    
     # Check if CUDA is available
     if torch.cuda.is_available():
         print("CUDA is available!")
@@ -97,6 +99,8 @@ def main():
         print(f"Device name: {torch.cuda.get_device_name(torch.cuda.current_device())}")
     else:
         print("CUDA is not available.")
+    torch.cuda.empty_cache()
+
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -108,6 +112,7 @@ def main():
         transforms.RandomVerticalFlip(p=0.5),    
         transforms.RandomRotation(90),           
         transforms.ToTensor(),             
+        
         transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5]),  # Normalize
     ]   )
 
@@ -119,13 +124,13 @@ def main():
     # dataset instance
     full_dataset = SuperResolutionDataset(lr_dir=lr_dir, hr_dir=hr_dir, transform=transform)
 
-    #splitting the dataset
+    # #splitting the dataset
     train_size = int(0.8 * len(full_dataset))
     val_size = len(full_dataset) - train_size
     train_dataset, val_dataset = random_split(full_dataset, [train_size, val_size])
 
     # Use dataloaders function to get train and validation loaders
-    train_loader, val_loader = dataloaders(train_dataset, val_dataset, batch_size=2)
+    train_loader, val_loader = dataloaders(train_dataset, val_dataset, batch_size=32)
 
     model_summary(model, device)
     setup_training(model, device, train_loader, val_loader)

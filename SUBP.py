@@ -42,5 +42,5 @@ class ImageEnhancementModel(nn.Module):
         x = self.rl_blocks(x_initial)     # RLFB blocks
         x = self.final_conv(x)            # Final conv before sub-pixel block
         x = x + x_initial                 # Skip connection
-        x = self.sub_pixel_conv_block(x)  # Sub-pixel convolution
+        x = self.sub_pixel_conv_block(x)  
         return x
