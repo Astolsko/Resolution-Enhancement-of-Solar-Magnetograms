@@ -80,16 +80,28 @@ class UNetWithAttention(nn.Module):
         )
 
         # UNet backbone
+<<<<<<< Updated upstream
         self.down1 = ResBlock(channels, dim)
         self.down2 = ResBlock(dim, dim * 2)
         self.mid = ResBlock(dim * 2, dim * 2)
         self.up1 = ResBlock(dim * 2, dim)
         self.up2 = ResBlock(dim, channels)
+=======
+        self.down1 = nn.Conv2d(channels, dim, 3, padding=1)
+        self.down2 = nn.Conv2d(dim, dim * 2, 3, padding=1)
+        self.mid = nn.Conv2d(dim * 2, dim * 2, 3, padding=1)
+        self.up1 = nn.ConvTranspose2d(dim * 2, dim, 3, padding=1)
+        self.up2 = nn.ConvTranspose2d(dim, channels, 3, padding=1)
+>>>>>>> Stashed changes
 
     def forward(self, x, t):
         # Time embedding
         time_emb = self.time_mlp(t.float().unsqueeze(1))  # Fix: Convert t to float
+<<<<<<< Updated upstream
         # Shape: [B, time_embedding_dim]
+=======
+ # Shape: [B, time_embedding_dim]
+>>>>>>> Stashed changes
 
         # Downsample
         h1 = self.down1(x)
@@ -143,5 +155,10 @@ generated_image = diffusion_model.sample(
     shape=(batch_size, channels, image_size, image_size), device=device
 )
 
+<<<<<<< Updated upstream
 save_image((generated_image + 1) / 2, "generated_image5.png")  # Scale [-1, 1] to [0, 1]
 print("Image generated and saved as 'generated_image5.png'")
+=======
+save_image((generated_image + 1) / 2, "generated_image4.png")  # Scale [-1, 1] to [0, 1]
+print("Image generated and saved as 'generated_image4.png'")
+>>>>>>> Stashed changes
