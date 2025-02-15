@@ -27,8 +27,7 @@ def train_model(
     device, 
     epochs, 
     patience, 
-    val_interval, 
-    lr_scheduler, 
+ 
     output_dir
 ):
     training = True
@@ -41,7 +40,7 @@ def train_model(
     total_start = time.time()
 
     # Define pixel-to-pixel loss (L1 Loss for this case)
-    pixel_loss_function = nn.L1Loss()  # You can also use nn.MSELoss() for L2 loss
+    pixel_loss_function = nn.L1Loss()
 
     for epoch in range(epochs):
         epoch_start = time.time()
@@ -62,7 +61,7 @@ def train_model(
             charbonnier_loss = loss_function(outputs, hr_targets)
             # Compute the Pixel-to-Pixel (L1) Loss
             pixel_loss = pixel_loss_function(outputs, hr_targets)
-            # Combine the losses (you can adjust the weight for each loss here)
+            # Combine the losses
             combined_loss = pixel_loss + charbonnier_loss
 
             combined_loss.backward()
@@ -85,49 +84,51 @@ def train_model(
                   f"Pixel Loss: {pixel_loss.item():.4f}, Combined Loss: {combined_loss.item():.4f}, "
                   f"Gradient Norm: {total_norm:.4f}, Step time: {(time.time() - step_start):.4f} sec")
 
-        lr_scheduler.step()
+
         epoch_loss /= len(train_loader)
         epoch_loss_values.append(epoch_loss)
         print(f"Epoch {epoch + 1} average loss: {epoch_loss:.4f}")
 
-        # Validation at intervals
-        if (epoch + 1) % val_interval == 0:
-            model.eval()
-            val_loss = 0
-            metric = 0
-            with torch.no_grad():
-                for val_data in val_loader:
-                    val_lr_inputs, val_hr_targets = val_data["image"].to(device), val_data["label"].to(device)
-                    val_outputs = model(val_lr_inputs)
-                    val_loss += loss_function(val_outputs, val_hr_targets).item()
-                    metric += compute_metric(val_outputs, val_hr_targets)
+        # Validation at every epoch
+        model.eval()
+        val_loss = 0
+        metric = 0
+        with torch.no_grad():
+            for val_data in val_loader:
+                val_lr_inputs, val_hr_targets = val_data["image"].to(device), val_data["label"].to(device)
+                val_outputs = model(val_lr_inputs)
+                val_loss += loss_function(val_outputs, val_hr_targets).item()
+                
+                # Compute PSNR
+                psnr_value = compute_metric(val_outputs, val_hr_targets)
+                metric += psnr_value
 
-                val_loss /= len(val_loader)
-                val_loss_values.append(val_loss)
-                metric /= len(val_loader)
-                metric_values.append(metric)
+            val_loss /= len(val_loader)
+            val_loss_values.append(val_loss)
+            metric /= len(val_loader)
+            metric_values.append(metric)
 
-                print(f"Validation Loss: {val_loss:.4f}")
-                print(f"Validation PSNR: {metric:.4f}")
+            print(f"Validation Loss: {val_loss:.4f}")
+            #print(f"Validation PSNR: {metric:.4f}")
 
-                # Save best model
-                if metric > best_metric:
-                    best_metric = metric
-                    best_metric_epoch = epoch + 1
-                    not_improved_epoch = 0
-                    torch.save(model.state_dict(), os.path.join(output_dir, "best_model.pth"))
-                    print(f"Saved new best model at epoch {epoch + 1}")
-                else:
-                    not_improved_epoch += 1
-                    if not_improved_epoch >= patience:
-                        training = False
-                        print("Early stopping as model performance hasn't improved")
-                        break
+            # Save best model
+            if metric > best_metric:
+                best_metric = metric
+                best_metric_epoch = epoch + 1
+                not_improved_epoch = 0
+                torch.save(model.state_dict(), os.path.join(output_dir, "best_model.pth"))
+                print(f"Saved new best model at epoch {epoch + 1}")
+            else:
+                not_improved_epoch += 1
+                if not_improved_epoch >= patience:
+                    training = False
+                    print("Early stopping as model performance hasn't improved")
+                    break
 
-            print(
-                f"Epoch {epoch + 1} validation metric: {metric:.4f},"
-                f" best metric so far: {best_metric:.4f} at epoch {best_metric_epoch}"
-            )
+        print(
+            f"Epoch {epoch + 1} validation metric: {metric:.4f},"
+            f" best metric so far: {best_metric:.4f} at epoch {best_metric_epoch}"
+        )
 
         print(f"Time taken for epoch {epoch + 1}: {(time.time() - epoch_start):.4f} seconds")
 
@@ -135,8 +136,9 @@ def train_model(
             print("Training stopped early due to no improvement.")
             break
 
+        
     total_time = time.time() - total_start
     print(f"Total training time: {total_time:.4f} seconds")
     print(f"All epoch losses: {epoch_loss_values}")
     print(f"Validation losses: {val_loss_values}")
-    print(f"PSNR metrics: {metric_values}")
+    print(f"PSNR metrics : {metric_values}")
