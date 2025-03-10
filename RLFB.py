@@ -1,14 +1,12 @@
 import torch.nn as nn
 from conv_layer import conv_layer
 from activation import activation
-from ESA import ESA
+from CBAM import CBAM
 
 class RLFB(nn.Module):
-    def __init__(self, in_channels, mid_channels=None, out_channels=None, esa_channels=16):
+    def __init__(self, in_channels, mid_channels=64, out_channels=None):
         super(RLFB, self).__init__()
 
-        if mid_channels is None:
-            mid_channels = in_channels
         if out_channels is None:
             out_channels = in_channels
 
@@ -17,21 +15,24 @@ class RLFB(nn.Module):
         self.c3_r = conv_layer(mid_channels, in_channels, 3)
 
         self.c5 = conv_layer(in_channels, out_channels, 1)
-        self.esa = ESA(esa_channels, out_channels, nn.Conv2d)
-
+        self.cbam = CBAM(out_channels)
         self.act = activation('silu')
+        self.dropout = nn.Dropout(p=0.2)
 
     def forward(self, x):
+        residual = x  # Skip connection
         out = self.c1_r(x)
         out = self.act(out)
+        out = self.dropout(out)
 
         out = self.c2_r(out)
         out = self.act(out)
+        out = self.dropout(out)
 
         out = self.c3_r(out)
         out = self.act(out)
+        out = self.dropout(out)
 
-        out = out + x
-        out = self.esa(self.c5(out))
-
+        out = out + residual  # Add skip connection
+        out = self.cbam(self.c5(out))
         return out

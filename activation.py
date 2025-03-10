@@ -1,6 +1,6 @@
 import torch.nn as nn
-
-def activation(act_type, inplace=True, neg_slope=0.05, n_prelu=1):
+# change neg slope to 0.01
+def activation(act_type, inplace=True, neg_slope=0.01, n_prelu=1):
     """
     neg_slope: float
         slope of negative region for `lrelu` or `prelu`.
